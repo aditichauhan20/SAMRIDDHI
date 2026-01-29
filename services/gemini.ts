@@ -1,13 +1,13 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { Scheme } from "../types";
 
 export const getGeminiResponse = async (prompt: string, context: any, audioData?: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const contents: any[] = [];
   const parts: any[] = [];
 
-  // Add audio part if provided
+  // Add audio part if provided (Recorded Audio Message)
   if (audioData) {
     parts.push({
       inlineData: {
@@ -17,22 +17,29 @@ export const getGeminiResponse = async (prompt: string, context: any, audioData?
     });
   }
 
-  // Add text prompt
+  // Enhanced System Instruction for Multilingual Indian Context
+  const systemInstruction = `
+    You are 'Samriddhi Sahayak', a highly intelligent and empathetic AI assistant for an Indian Citizen Welfare Portal. 
+    Your goal is to help citizens discover welfare schemes, understand document procedures, and lodge grievances.
+    
+    CRITICAL RULES:
+    1. LINGUISTIC PRECISION: You MUST respond strictly in the user's selected language: ${context.language || 'English'}.
+    2. NATIVE SCRIPT: If the language is an Indian regional language (like Hindi, Marathi, Tamil, etc.), you MUST use its native script (Devanagari, Tamil script, etc.).
+    3. CULTURAL CONTEXT: Use respectful Indian honorifics and culturally appropriate greetings based on the language.
+    4. AUDIO ANALYSIS: If an audio file is provided, transcribe it accurately (even if it is in a regional dialect) and respond to the query found within.
+    5. DATA ACCURACY: Use the provided context to give factual answers: ${JSON.stringify(context.data || {})}.
+    
+    Current Language Setting: ${context.language}
+  `;
+
   parts.push({
-    text: `
-      System: You are 'Samriddhi Sahayak', an AI assistant for an Indian government portal. 
-      Help the user navigate schemes, eligibility, or grievances. 
-      The user may speak in ANY Indian language (Hindi, Bengali, Marathi, etc.) or regional dialect.
-      Understand their intent even if the audio is in a local dialect.
-      Respond in the user's current selected language: ${context.language || 'English'}.
-      Context: ${JSON.stringify(context)}
-      User Message: ${prompt || (audioData ? "Please respond to the attached audio message." : "")}
-    `
+    text: `${systemInstruction}\n\nUser Input: ${prompt || (audioData ? "The user sent a voice message. Please analyze the audio and respond." : "Namaste!")}`
   });
 
+  // Always pass contents as an object with parts to avoid ambiguity in SDK versions
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: [{ parts }],
+    model: 'gemini-3-pro-preview', // Using Pro for better multilingual reasoning
+    contents: { parts },
   });
   
   return response.text;
@@ -99,32 +106,31 @@ export const semanticSearchSchemes = async (query: string, schemes: Scheme[]) =>
 
 export const verifyEligibilityWithDocument = async (base64Image: string, schemeName: string, schemeCriteria: string[]) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Pass contents as an object containing parts according to best practices
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: [
-      {
-        parts: [
-          {
-            inlineData: {
-              mimeType: 'image/jpeg',
-              data: base64Image.split(',')[1] || base64Image,
-            },
+    contents: {
+      parts: [
+        {
+          inlineData: {
+            mimeType: 'image/jpeg',
+            data: base64Image.split(',')[1] || base64Image,
           },
-          {
-            text: `Analyze the provided document image. Determine if the user is eligible for the scheme: "${schemeName}". 
-            Criteria: ${schemeCriteria.join(', ')}. 
-            Identify the document type. 
-            Check if key information (Name, Date, Income, Category etc.) matches the criteria.
-            Return a JSON object with: 
-            - isEligible (boolean)
-            - confidenceScore (0-100)
-            - detectedDocumentType (string)
-            - observation (detailed reason why eligible or not)
-            - missingInformation (list of fields not found or blurry)`
-          }
-        ]
-      }
-    ],
+        },
+        {
+          text: `Analyze the provided document image. Determine if the user is eligible for the scheme: "${schemeName}". 
+          Criteria: ${schemeCriteria.join(', ')}. 
+          Identify the document type. 
+          Check if key information (Name, Date, Income, Category etc.) matches the criteria.
+          Return a JSON object with: 
+          - isEligible (boolean)
+          - confidenceScore (0-100)
+          - detectedDocumentType (string)
+          - observation (detailed reason why eligible or not)
+          - missingInformation (list of fields not found or blurry)`
+        }
+      ]
+    },
     config: {
       responseMimeType: "application/json",
       responseSchema: {

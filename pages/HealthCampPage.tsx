@@ -1,7 +1,7 @@
 
+import { HEALTH_CAMPS } from '../constants';
+import { Calendar, MapPin, Clock, Info, HeartPulse, Search, Filter, ChevronRight, Map as MapIcon, X, CheckCircle2, AlertTriangle, ExternalLink, CalendarPlus, BellRing } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
-import { HEALTH_CAMPS } from '../constants.tsx';
-import { Calendar, MapPin, Clock, Info, HeartPulse, Search, Filter, ChevronRight, Map as MapIcon, X, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
 
 const HealthCampPage: React.FC = () => {
   const [selectedCity, setSelectedCity] = useState('All');
@@ -9,6 +9,7 @@ const HealthCampPage: React.FC = () => {
   const [registeredCamps, setRegisteredCamps] = useState<string[]>([]);
   const [showCancelModal, setShowCancelModal] = useState<string | null>(null);
   const [cancellationReason, setCancellationReason] = useState('');
+  const [showCalendarPrompt, setShowCalendarPrompt] = useState<string | null>(null);
 
   const majorCities = useMemo(() => {
     const cities = new Set(HEALTH_CAMPS.map(c => c.city));
@@ -26,7 +27,46 @@ const HealthCampPage: React.FC = () => {
 
   const handleRegister = (id: string) => {
     setRegisteredCamps(prev => [...prev, id]);
-    alert("Success! You have been registered for the health camp. An SMS confirmation has been sent to your registered mobile number.");
+    setShowCalendarPrompt(id);
+    
+    // Trigger a system notification as well
+    window.dispatchEvent(new CustomEvent('push-notification', {
+      detail: {
+        title: "Registration Success",
+        message: "You have been registered for the health camp. Check your SMS.",
+        type: "SUCCESS"
+      }
+    }));
+  };
+
+  const downloadIcs = (camp: typeof HEALTH_CAMPS[0]) => {
+    const dateStr = camp.date.replace(/-/g, '');
+    const startTime = "090000"; // Assuming 9 AM start if not detailed
+    const endTime = "160000";   // Assuming 4 PM end
+    
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Samriddhi//Citizen Portal//EN',
+      'BEGIN:VEVENT',
+      `SUMMARY:${camp.title}`,
+      `DTSTART:${dateStr}T${startTime}`,
+      `DTEND:${dateStr}T${endTime}`,
+      `LOCATION:${camp.location}, ${camp.city}`,
+      `DESCRIPTION:${camp.description}\\n\\nPlease carry your Aadhaar card and previous medical records.`,
+      'STATUS:CONFIRMED',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\n');
+
+    const blob = new globalThis.Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.setAttribute('download', `${camp.title.replace(/\s+/g, '_')}.ics`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setShowCalendarPrompt(null);
   };
 
   const handleViewLocation = (location: string, city: string) => {
@@ -42,7 +82,14 @@ const HealthCampPage: React.FC = () => {
     setRegisteredCamps(prev => prev.filter(id => id !== showCancelModal));
     setShowCancelModal(null);
     setCancellationReason('');
-    alert("Your registration has been successfully cancelled.");
+    
+    window.dispatchEvent(new CustomEvent('push-notification', {
+      detail: {
+        title: "Registration Cancelled",
+        message: "The health camp registration has been removed.",
+        type: "INFO"
+      }
+    }));
   };
 
   const CANCELLATION_REASONS = [
@@ -186,6 +233,7 @@ const HealthCampPage: React.FC = () => {
             const campDate = new Date(camp.date);
             const isToday = campDate.toDateString() === new Date().toDateString();
             const isRegistered = registeredCamps.includes(camp.id);
+            const isCalendarPromptActive = showCalendarPrompt === camp.id;
             
             return (
               <div key={camp.id} className="relative group ml-4 md:ml-10">
@@ -238,29 +286,63 @@ const HealthCampPage: React.FC = () => {
                         </div>
                       </div>
                       <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-base font-medium">{camp.description}</p>
-                      <div className="flex flex-wrap items-center gap-4 pt-4">
-                        {isRegistered ? (
+                      
+                      {isCalendarPromptActive ? (
+                        <div className="bg-green-50 dark:bg-green-900/20 p-6 rounded-[2rem] border border-green-200 dark:border-green-800/30 animate-in slide-in-from-top-2 duration-500 space-y-4">
+                           <div className="flex items-center gap-3">
+                              {/* Fix: Replaced non-existent member BellCheck with BellRing from lucide-react */}
+                              <BellRing size={20} className="text-green-600" />
+                              <p className="text-sm font-black text-green-700 dark:text-green-400 uppercase tracking-tight">Registration Confirmed!</p>
+                           </div>
+                           <p className="text-xs font-bold text-slate-600 dark:text-slate-300">Would you like to add this event to your calendar to receive a reminder?</p>
+                           <div className="flex gap-3">
+                              <button 
+                                onClick={() => downloadIcs(camp)}
+                                className="px-6 py-3 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-green-500/20 hover:bg-green-700 transition-all"
+                              >
+                                <CalendarPlus size={16} /> Yes, Add to Calendar
+                              </button>
+                              <button 
+                                onClick={() => setShowCalendarPrompt(null)}
+                                className="px-6 py-3 bg-white dark:bg-slate-800 text-slate-400 rounded-xl font-black text-[10px] uppercase tracking-widest hover:text-slate-600 transition-all"
+                              >
+                                Not Now
+                              </button>
+                           </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-4 pt-4">
+                          {isRegistered ? (
+                            <div className="flex gap-2">
+                               <button 
+                                onClick={() => setShowCancelModal(camp.id)}
+                                className="px-10 py-4 bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 font-black rounded-2xl hover:bg-red-100 dark:hover:bg-red-900/20 transition-all text-xs uppercase tracking-[0.1em] border border-red-200 dark:border-red-800 active:scale-95"
+                              >
+                                Cancel
+                              </button>
+                              <button 
+                                onClick={() => downloadIcs(camp)}
+                                className="px-10 py-4 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 font-black rounded-2xl hover:bg-green-100 transition-all text-xs uppercase tracking-[0.1em] border border-green-200 flex items-center gap-2"
+                              >
+                                <CalendarPlus size={16} /> Add to Calendar
+                              </button>
+                            </div>
+                          ) : (
+                            <button 
+                              onClick={() => handleRegister(camp.id)}
+                              className="px-10 py-4 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all text-xs uppercase tracking-[0.1em] shadow-xl shadow-blue-500/30 active:scale-95"
+                            >
+                              Confirm Registration
+                            </button>
+                          )}
                           <button 
-                            onClick={() => setShowCancelModal(camp.id)}
-                            className="px-10 py-4 bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 font-black rounded-2xl hover:bg-red-100 dark:hover:bg-red-900/20 transition-all text-xs uppercase tracking-[0.1em] border border-red-200 dark:border-red-800 active:scale-95"
+                            onClick={() => handleViewLocation(camp.location, camp.city)}
+                            className="px-10 py-4 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200 font-black rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-all text-xs uppercase tracking-[0.1em] active:scale-95 flex items-center gap-2"
                           >
-                            Cancel Registration
+                            View Location <ExternalLink size={14} />
                           </button>
-                        ) : (
-                          <button 
-                            onClick={() => handleRegister(camp.id)}
-                            className="px-10 py-4 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all text-xs uppercase tracking-[0.1em] shadow-xl shadow-blue-500/30 active:scale-95"
-                          >
-                            Confirm Registration
-                          </button>
-                        )}
-                        <button 
-                          onClick={() => handleViewLocation(camp.location, camp.city)}
-                          className="px-10 py-4 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200 font-black rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-all text-xs uppercase tracking-[0.1em] active:scale-95 flex items-center gap-2"
-                        >
-                          View Location <ExternalLink size={14} />
-                        </button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
