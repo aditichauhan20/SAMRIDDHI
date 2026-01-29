@@ -1,0 +1,8 @@
+{
+  "name": "Copy of Samriddhi - Citizen Welfare Portal",
+  "description": "A comprehensive e-governance platform for citizens to discover welfare schemes, file grievances, and manage government documents with an integrated AI voice assistant.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
